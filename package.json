@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test",
     "db:setup": "node scripts/supabase-setup.mjs",
+    "db:upgrade": "node scripts/supabase-upgrade.mjs",
     "deploy:link": "node scripts/deploy-link.mjs",
     "check:public": "node scripts/check-public.mjs",
     "maps:build": "node scripts/rebuild-maps.mjs"

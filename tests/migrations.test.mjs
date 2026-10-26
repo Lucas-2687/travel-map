@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readdir } from "node:fs/promises";
 import { after, before, mock, test } from "node:test";
+import { upgradeSql } from "../scripts/supabase-upgrade.mjs";
 import { asRole, blockNetwork, createDatabase, migrate, migrations, tables } from "./helpers/database.mjs";
 
 let networkAttempts;
@@ -118,6 +119,40 @@ test("upgrading a single existing map preserves records, credentials, private bu
   assert.deepEqual(await snapshot(db, Object.keys(records)), records);
   assert.deepEqual((await db.query("select * from public.site_map")).rows, [{ id: 1, space_id: firstId }]);
   assert.deepEqual(await storageSnapshot(db), stored);
+});
+
+test("generated upgrade from the production schema preserves the bound map, records, credentials and photos", async (t) => {
+  const db = await database(t, 3);
+  await db.query(initializeSql, mapArguments(firstId));
+  await db.query('insert into public.trips (space_id, title, precision, places, photos) values ($1, $2, $3, $4, $5)', [firstId, "合成旧站旅行", "unknown", JSON.stringify([{ id: "CN-330100", kind: "city", country: "CHN", province: "CN-330000" }]), JSON.stringify([{ key: `${firstId}/retained.jpg` }])]);
+  await db.query("insert into public.shares (token_hash, space_id, scope, audience) values ('retained-share', $1, '\"all\"', 'link')", [firstId]);
+  await db.query("insert into public.map_sessions values ('retained-session', $1, now() + interval '1 day')", [`map:${firstId}`]);
+  await seedStorage(db, false);
+  const records = await snapshot(db, tables);
+  const stored = await storageSnapshot(db);
+  const sql = await upgradeSql("0003");
+  assert.ok(sql.includes("-- 0004_server_table_privileges.sql"));
+  assert.ok(sql.includes("-- 0005_private_photo_bucket.sql"));
+  assert.ok(!sql.includes("-- 0001_initial_schema.sql"));
+  assert.ok(!sql.includes("-- 0002_vercel_functions.sql"));
+  assert.ok(!sql.includes("-- 0003_single_site_map.sql"));
+  await db.exec(sql);
+  assert.deepEqual(await snapshot(db, tables), records);
+  assert.deepEqual(await storageSnapshot(db), stored);
+  assert.equal((await asRole(db, "service_role", "select title from public.trips")).rows[0].title, "合成旧站旅行");
+});
+
+test("upgrade generation requires a known version and only emits migrations after it", async () => {
+  assert.equal(await upgradeSql("0003"), await upgradeSql("0003_single_site_map.sql"));
+  const latest = await upgradeSql("0005");
+  assert.match(latest, /No newer migrations/);
+  assert.ok(!latest.includes("insert into"));
+  const fourth = await upgradeSql("0004");
+  assert.ok(fourth.includes("-- 0005_private_photo_bucket.sql"));
+  assert.ok(!fourth.includes("grant usage"));
+  for (const value of [undefined, "", "0000", "0006", "3", "../0003", "0003_nonexistent.sql"]) {
+    await assert.rejects(upgradeSql(value), /last consecutively applied migration/);
+  }
 });
 
 test("an ambiguous existing installation is never silently bound or initialized over", async (t) => {

@@ -158,6 +158,16 @@ Keep your existing Vercel project, Supabase project, and environment variables. 
 4. Verify the update in an isolated Preview environment, then connect production to the intended repository and release branch. Vercel builds on pushes to that branch.
 5. Open `/edit` with the original passphrase and check existing trips and photos. Upload processing changes apply to future uploads, not historical photos.
 
+After verifying the last consecutively applied migration in the target database, generate only subsequent SQL, for example:
+
+```powershell
+npm run --silent db:upgrade -- --after 0003
+```
+
+This only prints SQL; it does not detect the deployed schema or connect to Supabase. Test the output in an isolated database before applying it. Use `--after 0004` if that migration has already succeeded.
+
+When consolidating private deployment code and an open-source repository, use the deployed version as the behavior baseline, publish only the reviewed code, and reconnect the **existing Vercel project** to the final repository. Keep its domain, Production variables, database and photo bucket. Do not publish private Git history as a shortcut. Verify production before archiving the old repository; deletion comes last. See the [consolidation checklist (Chinese)](docs/maintenance.md#从双仓库合并为一个公开仓库).
+
 The [upgrade guide (Chinese)](docs/deployment.md#已有网站升级保留数据与原口令) and [maintenance guide (Chinese)](docs/maintenance.md) cover map binding, passphrase recovery, logs, rollback, and common failures.
 
 ## Maintenance and license
